@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Emergency Aircraft Response (Google Maps)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Set the size of the div element that contains the map */
+        #map {
+            height: 600px; /* Or any other height */
+            width: 100%;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 flex flex-col items-center justify-center min-h-screen p-4">
+
+    <div class="w-full max-w-5xl bg-white rounded-lg shadow-lg p-6">
+        <h1 class="text-2xl md:text-3xl font-bold text-center mb-2">Dynamic Emergency Aircraft Response</h1>
+        <p class="text-center text-gray-600 mb-6">Aircraft coverage dynamically fills the map to ensure a 10-minute response time. Click anywhere on the map to dispatch the nearest unit.</p>
+        
+        <!-- The div that holds the map -->
+        <div id="map" class="rounded-lg overflow-hidden border-2 border-gray-200"></div>
+    </div>
+
+    <script>
+        let map;
+        let aircraftMarkers = [];
+        let etaInfoWindow; // To display flight time next to the aircraft
+
+        const ORBIT_RADIUS_METERS = 3000; // 3km orbit radius
+        const ORBIT_SPEED = 0.02; // Radians per frame for animation
+        const AIRCRAFT_SPEED_KNOTS = 120;
+        const AIRCRAFT_SPEED_MPS = AIRCRAFT_SPEED_KNOTS * 0.514444; // meters per second
+
+        function initMap() {
+            const somersetCenter = { lat: 51.1, lng: -2.85 };
+            map = new google.maps.Map(document.getElementById("map"), {
+                zoom: 9, // Start more zoomed out to show the county level
+                center: somersetCenter,
+                mapTypeId: 'terrain' // 'roadmap', 'satellite', 'hybrid', 'terrain'
+            });
+
+            map.addListener("idle", updateAircraftLayout);
+            animateOrbit();
+
+            map.addListener("click", (mapsMouseEvent) => {
+                const targetLatLng = mapsMouseEvent.latLng;
+                dispatchAircraft(targetLatLng);
+            });
+        }
+        
+        function gm_authFailure() {
+            console.error("Google Maps authentication failed. Please check your API key.");
+        }
+
+        function updateAircraftLayout() {
+            // Keep track of dispatched aircraft
+            const dispatchedAircraft = aircraftMarkers.filter(ac => ac.base.isDispatched);
+            
+            // Remove all non-dispatched aircraft from the map and the array
+            aircraftMarkers
+                .filter(ac => !ac.base.isDispatched)
+                .forEach(ac => ac.marker.setMap(null));
+            
+            // The array now only contains dispatched aircraft
+            aircraftMarkers = dispatchedAircraft;
+            
+            const bounds = map.getBounds();
+            if (!bounds) return;
+
+            const maxTravelDistanceMeters = AIRCRAFT_SPEED_MPS * 10 * 60;
+            const requiredCellSizeMeters = maxTravelDistanceMeters * Math.sqrt(2);
+
+            const ne = bounds.getNorthEast();
+            const sw = bounds.getSouthWest();
+
+            const mapWidthMeters = google.maps.geometry.spherical.computeDistanceBetween(
+                new google.maps.LatLng(bounds.getCenter().lat(), sw.lng()),
+                new google.maps.LatLng(bounds.getCenter().lat(), ne.lng())
+            );
+            const mapHeightMeters = google.maps.geometry.spherical.computeDistanceBetween(
+                sw,
+                new google.maps.LatLng(ne.lat(), sw.lng())
+            );
+
+            const densityX = Math.max(1, Math.ceil(mapWidthMeters / requiredCellSizeMeters));
+            const densityY = Math.max(1, Math.ceil(mapHeightMeters / requiredCellSizeMeters));
+
+            const latStep = (ne.lat() - sw.lat()) / densityY;
+            const lngStep = (ne.lng() - sw.lng()) / densityX;
+
+            const basesToShow = [];
+            let idCounter = 1;
+            
+            for (let i = 0; i < densityY; i++) {
+                for (let j = 0; j < densityX; j++) {
+                    const lat = sw.lat() + latStep * (i + 0.5);
+                    const lng = sw.lng() + lngStep * (j + 0.5);
+                    
+                    basesToShow.push({
+                        id: idCounter++,
+                        lat: lat,
+                        lng: lng,
+                        available: true,
+                        isDispatched: false,
+                        angle: Math.random() * 2 * Math.PI,
+                        name: `Unit ${idCounter - 1}`,
+                        animationFrameId: null,
+                        returnTimeoutId: null
+                    });
+                }
+            }
+            
+            setupAircraft(basesToShow);
+        }
+
+        function setupAircraft(basesToSetup) {
+            basesToSetup.forEach(base => {
+                setupSingleAircraft(base);
+            });
+        }
+        
+        function setupSingleAircraft(base) {
+             const aircraftIcon = {
+                path: 'M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z',
+                fillColor: '#10b981',
+                fillOpacity: 1,
+                strokeWeight: 0,
+                rotation: 0,
+                scale: 1.25,
+                anchor: new google.maps.Point(12, 12),
+            };
+
+            const marker = new google.maps.Marker({
+                position: { lat: base.lat, lng: base.lng },
+                map: map,
+                icon: aircraftIcon,
+                title: `Aircraft ${base.name}`
+            });
+
+            aircraftMarkers.push({ marker, base });
+        }
+
+
+        function animateOrbit() {
+            aircraftMarkers.forEach(ac => {
+                if (ac.base && !ac.base.isDispatched) {
+                    const base = ac.base;
+                    base.angle += ORBIT_SPEED;
+                    
+                    const R = 6378137;
+                    const d = ORBIT_RADIUS_METERS;
+                    const lat1 = base.lat * Math.PI / 180;
+                    const lon1 = base.lng * Math.PI / 180;
+
+                    const lat2 = Math.asin(Math.sin(lat1) * Math.cos(d / R) +
+                        Math.cos(lat1) * Math.sin(d / R) * Math.cos(base.angle));
+
+                    const lon2 = lon1 + Math.atan2(Math.sin(base.angle) * Math.sin(d / R) * Math.cos(lat1),
+                        Math.cos(d / R) - Math.sin(lat1) * Math.sin(lat2));
+
+                    const newPosition = {
+                        lat: lat2 * 180 / Math.PI,
+                        lng: lon2 * 180 / Math.PI
+                    };
+
+                    ac.marker.setPosition(newPosition);
+
+                    const icon = ac.marker.getIcon();
+                    if (icon) {
+                        icon.rotation = (base.angle * 180 / Math.PI) + 90; 
+                        ac.marker.setIcon(icon);
+                    }
+                }
+            });
+            requestAnimationFrame(animateOrbit);
+        }
+
+        function dispatchAircraft(targetLatLng) {
+            let nearestAircraft = null;
+            let minDistance = Infinity;
+
+            // Find the nearest aircraft, regardless of its current state
+            aircraftMarkers.forEach(ac => {
+                const currentPos = ac.marker.getPosition();
+                const distance = google.maps.geometry.spherical.computeDistanceBetween(currentPos, targetLatLng);
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    nearestAircraft = ac;
+                }
+            });
+
+            if (nearestAircraft) {
+                // Interrupt any ongoing animation or timeout for this aircraft
+                if (nearestAircraft.base.animationFrameId) {
+                    cancelAnimationFrame(nearestAircraft.base.animationFrameId);
+                    nearestAircraft.base.animationFrameId = null;
+                }
+                if (nearestAircraft.base.returnTimeoutId) {
+                    clearTimeout(nearestAircraft.base.returnTimeoutId);
+                    nearestAircraft.base.returnTimeoutId = null;
+                }
+
+                nearestAircraft.base.available = false;
+                nearestAircraft.base.isDispatched = true;
+
+                const icon = nearestAircraft.marker.getIcon();
+                if (icon) {
+                    icon.fillColor = '#e63946'; // Red for dispatched
+                    nearestAircraft.marker.setIcon(icon);
+                }
+
+                const flightTimeSeconds = minDistance / AIRCRAFT_SPEED_MPS;
+                const flightTimeMinutes = flightTimeSeconds / 60;
+                
+                if (etaInfoWindow) etaInfoWindow.close();
+
+                etaInfoWindow = new google.maps.InfoWindow({
+                    content: `<div class="text-center font-semibold">ETA: ${flightTimeMinutes.toFixed(1)} min</div>`
+                });
+                etaInfoWindow.open(map, nearestAircraft.marker);
+
+                const startPos = nearestAircraft.marker.getPosition();
+                const endPos = targetLatLng;
+                const duration = Math.min(flightTimeSeconds * 1000, 8000); // Animate for a max of 8 seconds for long flights
+                const startTime = Date.now();
+
+                const animateFlight = () => {
+                    const elapsed = Date.now() - startTime;
+                    const fraction = elapsed / duration;
+
+                    if (fraction < 1) {
+                        const newPos = google.maps.geometry.spherical.interpolate(startPos, endPos, fraction);
+                        nearestAircraft.marker.setPosition(newPos);
+                        
+                        if(etaInfoWindow) {
+                            etaInfoWindow.setPosition(newPos);
+                        }
+
+                        const heading = google.maps.geometry.spherical.computeHeading(startPos, endPos);
+                        const icon = nearestAircraft.marker.getIcon();
+                        if(icon) {
+                            icon.rotation = heading;
+                            nearestAircraft.marker.setIcon(icon);
+                        }
+                        nearestAircraft.base.animationFrameId = requestAnimationFrame(animateFlight);
+                    } else {
+                        nearestAircraft.marker.setPosition(endPos);
+                        nearestAircraft.base.animationFrameId = null;
+                        nearestAircraft.base.returnTimeoutId = setTimeout(() => returnToBase(nearestAircraft), 3000);
+                    }
+                };
+                nearestAircraft.base.animationFrameId = requestAnimationFrame(animateFlight);
+            }
+        }
+
+        function returnToBase(aircraft) {
+            if (etaInfoWindow) etaInfoWindow.close();
+            aircraft.base.returnTimeoutId = null; // Timeout has fired
+
+            // Change color to green at the start of the return journey
+            const icon = aircraft.marker.getIcon();
+            if (icon) {
+                icon.fillColor = '#10b981'; // Back to green
+                aircraft.marker.setIcon(icon);
+            }
+
+            const startPos = aircraft.marker.getPosition();
+            const endPos = new google.maps.LatLng(aircraft.base.lat, aircraft.base.lng);
+            const distance = google.maps.geometry.spherical.computeDistanceBetween(startPos, endPos);
+            const flightTimeSeconds = distance / AIRCRAFT_SPEED_MPS;
+            const duration = Math.min(flightTimeSeconds * 1000, 8000);
+            const startTime = Date.now();
+
+            const animateReturn = () => {
+                const elapsed = Date.now() - startTime;
+                const fraction = elapsed / duration;
+
+                if (fraction < 1) {
+                    const newPos = google.maps.geometry.spherical.interpolate(startPos, endPos, fraction);
+                    aircraft.marker.setPosition(newPos);
+                    const heading = google.maps.geometry.spherical.computeHeading(startPos, endPos);
+                    const returnIcon = aircraft.marker.getIcon();
+                    if(returnIcon) {
+                        returnIcon.rotation = heading;
+                        aircraft.marker.setIcon(returnIcon);
+                    }
+                    aircraft.base.animationFrameId = requestAnimationFrame(animateReturn);
+                } else {
+                    // Once it arrives, reset its state
+                    aircraft.base.animationFrameId = null;
+                    aircraft.base.available = true;
+                    aircraft.base.isDispatched = false;
+                }
+            };
+            aircraft.base.animationFrameId = requestAnimationFrame(animateReturn);
+        }
+
+    </script>
+    
+    <script async defer
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDEEGvE15cOlL7I0F4jp3SKOwwKbyYcHIQ&callback=initMap&libraries=geometry">
+    </script>
+
+</body>
+</html>
