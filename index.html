@@ -22,10 +22,16 @@
     <div class="w-full max-w-5xl bg-white rounded-lg shadow-lg p-6">
         <h1 class="text-2xl md:text-3xl font-bold text-center mb-2">Dynamic Emergency Aircraft Response</h1>
         <div class="flex flex-col sm:flex-row justify-between items-center text-center sm:text-left mb-6">
-            <p class="text-gray-600 mb-4 sm:mb-0">Aircraft coverage dynamically fills the map to ensure a 10-minute response time. Click anywhere on the map to dispatch the nearest unit.</p>
-            <div class="flex items-center justify-center flex-shrink-0 ml-4">
-                <input type="checkbox" id="liveDataToggle" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
-                <label for="liveDataToggle" class="ml-2 block text-sm text-gray-900">Show Live ADS-B Data</label>
+            <p id="descriptionText" class="text-gray-600 mb-4 sm:mb-0">Aircraft coverage dynamically fills the map to ensure a 12-minute response time. Click anywhere on the map to dispatch the nearest unit.</p>
+            <div class="flex items-center space-x-4">
+                 <div class="flex items-center">
+                    <label for="responseTimeInput" class="mr-2 text-sm text-gray-900 whitespace-nowrap">Response Time (min):</label>
+                    <input type="number" id="responseTimeInput" value="12" min="1" class="w-16 p-1 rounded border border-gray-300 text-center">
+                </div>
+                <div class="flex items-center justify-center flex-shrink-0">
+                    <input type="checkbox" id="liveDataToggle" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                    <label for="liveDataToggle" class="ml-2 block text-sm text-gray-900">Show Live ADS-B Data</label>
+                </div>
             </div>
         </div>
         
@@ -41,6 +47,7 @@
         let liveAircraftMarkers = {}; // To store live ADS-B aircraft
         let liveDataInterval = null;
         let deconflictionInterval = null;
+        let RESPONSE_TIME_MINUTES = 12;
 
         const AIRCRAFT_SPEED_KNOTS = 120;
         const AIRCRAFT_SPEED_MPS = AIRCRAFT_SPEED_KNOTS * 0.514444; // meters per second
@@ -79,6 +86,15 @@
                     startFetchingLiveData();
                 } else {
                     stopFetchingLiveData();
+                }
+            });
+            
+            document.getElementById('responseTimeInput').addEventListener('input', (event) => {
+                const newTime = parseInt(event.target.value, 10);
+                if (!isNaN(newTime) && newTime > 0) {
+                    RESPONSE_TIME_MINUTES = newTime;
+                    document.getElementById('descriptionText').innerText = `Aircraft coverage dynamically fills the map to ensure a ${RESPONSE_TIME_MINUTES}-minute response time. Click anywhere on the map to dispatch the nearest unit.`;
+                    updateAircraftLayout();
                 }
             });
 
@@ -244,7 +260,7 @@
             const bounds = map.getBounds();
             if (!bounds) return;
 
-            const maxTravelDistanceMeters = AIRCRAFT_SPEED_MPS * 10 * 60;
+            const maxTravelDistanceMeters = AIRCRAFT_SPEED_MPS * RESPONSE_TIME_MINUTES * 60; // Use variable here
             const requiredCellSizeMeters = maxTravelDistanceMeters * Math.sqrt(2);
 
             const ne = bounds.getNorthEast();
