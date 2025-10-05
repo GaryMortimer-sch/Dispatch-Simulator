@@ -3,40 +3,671 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Coming Soon</title>
-    <!-- Tailwind CSS for styling -->
+    <title>Emergency Aircraft Response (Open-Source Map)</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Google Fonts for a clean, modern look -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+     integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+     crossorigin=""/>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
         body {
             font-family: 'Inter', sans-serif;
         }
+        #map {
+            position: relative;
+            height: 600px;
+            width: 100%;
+        }
+        #statusBox {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            padding: 8px 12px;
+            border-radius: 6px;
+            color: white;
+            font-weight: 500;
+            z-index: 1000; /* Ensure it's on top of map layers */
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            transition: background-color 0.3s ease;
+        }
+        .leaflet-tooltip-pane .live-adsb-label {
+            background-color: rgba(255, 255, 255, 0.8);
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 500;
+            padding: 2px 4px;
+            white-space: pre; /* To respect newlines */
+        }
     </style>
 </head>
-<body class="bg-gray-900 text-white antialiased">
-    <!-- Main container to center content -->
-    <div class="flex items-center justify-center h-screen">
-        <div class="text-center p-8 max-w-lg mx-auto">
-            <!-- Icon -->
-            <div class="mb-8">
-                <svg class="w-20 h-20 mx-auto text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                </svg>
-            </div>
-            
-            <!-- Main Heading -->
-            <h1 class="text-4xl md:text-5xl font-bold mb-4 text-gray-100 tracking-tight">
-                New Version Coming Soon
-            </h1>
-            
-            <!-- Subheading -->
-            <p class="text-lg md:text-xl text-gray-400">
-                We're working hard behind the scenes to bring you an improved experience. Stay tuned!
-            </p>
+<body class="bg-gray-100 text-gray-800 flex flex-col items-center justify-center min-h-screen p-4">
+
+    <div class="w-full max-w-5xl bg-white rounded-lg shadow-lg p-6">
+        <h1 class="text-2xl md:text-3xl font-bold text-center mb-2">Dynamic Emergency Aircraft Response</h1>
+        <div class="flex flex-col sm:flex-row justify-between items-center text-center sm:text-left mb-4">
+            <p id="descriptionText" class="text-gray-600 mb-4 sm:mb-0">Set parameters and press 'Start Sim'. Click anywhere on the map to dispatch the nearest unit.</p>
         </div>
+        <div class="grid grid-cols-2 sm:grid-cols-6 gap-4 mb-6">
+             <div class="flex flex-col items-center">
+                <label for="responseTimeInput" class="text-sm text-gray-900 whitespace-nowrap mb-1">Response Time (min)</label>
+                <input type="number" id="responseTimeInput" value="12" min="1" class="w-24 p-1 rounded border border-gray-300 text-center">
+            </div>
+             <div class="flex flex-col items-center">
+                <label for="loiterSpeedInput" class="text-sm text-gray-900 whitespace-nowrap mb-1">Loiter Speed (knots)</label>
+                <input type="number" id="loiterSpeedInput" value="120" min="20" class="w-24 p-1 rounded border border-gray-300 text-center">
+            </div>
+             <div class="flex flex-col items-center">
+                <label for="dashSpeedInput" class="text-sm text-gray-900 whitespace-nowrap mb-1">Dash Speed (knots)</label>
+                <input type="number" id="dashSpeedInput" value="180" min="50" class="w-24 p-1 rounded border border-gray-300 text-center">
+            </div>
+             <div class="flex flex-col items-center">
+                <label for="waitInput" class="text-sm text-gray-900 whitespace-nowrap mb-1">Wait Time (min)</label>
+                <input type="number" id="waitInput" value="2" min="0" class="w-24 p-1 rounded border border-gray-300 text-center">
+            </div>
+            <div class="flex flex-col items-center justify-end">
+                <button id="deployBtn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-1 px-4 rounded h-full w-full disabled:opacity-50 disabled:cursor-not-allowed">Deploy New Aircraft</button>
+            </div>
+             <div class="flex flex-col items-center justify-end">
+                <button id="startSimBtn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-1 px-4 rounded h-full w-full">Start Sim</button>
+            </div>
+        </div>
+         <div class="flex items-center justify-center mb-6">
+            <input type="checkbox" id="liveDataToggle" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+            <label for="liveDataToggle" class="ml-2 block text-sm text-gray-900">Show Live ADS-B Data</label>
+            <span id="adsbStatus" class="ml-4 text-sm text-gray-500"></span>
+        </div>
+        
+        <div id="map" class="rounded-lg overflow-hidden border-2 border-gray-200">
+            <div id="statusBox">Not Started</div>
+        </div>
+
     </div>
+    
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+     integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+     crossorigin=""></script>
+
+    <script>
+        let map;
+        let aircraftMarkers = [];
+        let liveAircraftMarkers = {};
+        let liveDataInterval = null;
+        let deconflictionInterval = null;
+        let isSimRunning = false;
+        let deploymentCounter = 0;
+
+        let RESPONSE_TIME_MINUTES = 12;
+        let LOITER_SPEED_KNOTS = 120;
+        let DASH_SPEED_KNOTS = 180;
+        let WAIT_TIME_MINUTES = 2;
+
+        const STRAIGHT_SIDE_MILES = 7;
+        const TRACK_WIDTH_MILES = 4;
+        const TURN_RADIUS_MILES = 1;
+        const STRAIGHT_SIDE_METERS = STRAIGHT_SIDE_MILES * 1609.34;
+        const TURN_RADIUS_METERS = (TRACK_WIDTH_MILES / 2) * 1609.34;
+        const TURN_LENGTH_METERS = Math.PI * TURN_RADIUS_METERS;
+        const RACETRACK_PERIMETER = 2 * STRAIGHT_SIDE_METERS + 2 * TURN_LENGTH_METERS;
+        const ARC_TURN_RADIUS_METERS = TURN_RADIUS_MILES * 1609.34;
+        const MIN_SEPARATION_METERS = 5 * 1852;
+
+        // --- Geometry Helper Functions (to replace Google Maps Geometry Library) ---
+        const toRad = (deg) => deg * Math.PI / 180;
+        const toDeg = (rad) => rad * 180 / Math.PI;
+
+        function computeOffset(start, distance, bearing) {
+            const R = 6371e3; // Earth's radius in metres
+            const lat1 = toRad(start.lat);
+            const lon1 = toRad(start.lng);
+            const brng = toRad(bearing);
+
+            const lat2 = Math.asin(Math.sin(lat1) * Math.cos(distance / R) +
+                                 Math.cos(lat1) * Math.sin(distance / R) * Math.cos(brng));
+            let lon2 = lon1 + Math.atan2(Math.sin(brng) * Math.sin(distance / R) * Math.cos(lat1),
+                                        Math.cos(distance / R) - Math.sin(lat1) * Math.sin(lat2));
+            return L.latLng(toDeg(lat2), toDeg(lon2));
+        }
+
+        function computeHeading(start, end) {
+            const y = Math.sin(toRad(end.lng) - toRad(start.lng)) * Math.cos(toRad(end.lat));
+            const x = Math.cos(toRad(start.lat)) * Math.sin(toRad(end.lat)) -
+                      Math.sin(toRad(start.lat)) * Math.cos(toRad(end.lat)) * Math.cos(toRad(end.lng) - toRad(start.lng));
+            return (toDeg(Math.atan2(y, x)) + 360) % 360;
+        }
+
+
+        function initMap() {
+            const tauntonCenter = [51.0128, -3.1021];
+            map = L.map('map').setView(tauntonCenter, 9);
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(map);
+
+            fetch('https://raw.githubusercontent.com/martinjc/UK-GeoJSON/master/json/administrative/gb/cty.json')
+                .then(response => response.json())
+                .then(data => {
+                    L.geoJson(data, {
+                        style: {
+                            fillColor: 'transparent',
+                            color: '#4a5568',
+                            weight: 1,
+                            clickable: false
+                        }
+                    }).addTo(map);
+                });
+            
+            map.on("moveend", checkCoverage);
+            requestAnimationFrame(animateOrbit);
+
+            map.on("click", (e) => {
+                dispatchAircraft(e.latlng);
+            });
+
+            document.getElementById('liveDataToggle').addEventListener('change', (event) => {
+                if (event.currentTarget.checked) startFetchingLiveData(); else stopFetchingLiveData();
+            });
+            
+            document.getElementById('responseTimeInput').addEventListener('input', checkCoverage);
+            document.getElementById('loiterSpeedInput').addEventListener('input', checkCoverage);
+            document.getElementById('startSimBtn').addEventListener('click', startSimulation);
+            document.getElementById('deployBtn').addEventListener('click', deployAircraftAtCenter);
+            document.getElementById('deployBtn').disabled = true;
+
+            deconflictionInterval = setInterval(checkDeconfliction, 1500);
+        }
+
+        function startSimulation() {
+             const rt = parseInt(document.getElementById('responseTimeInput').value, 10);
+             if (!isNaN(rt) && rt > 0) RESPONSE_TIME_MINUTES = rt;
+             const ls = parseInt(document.getElementById('loiterSpeedInput').value, 10);
+             if (!isNaN(ls) && ls > 0) LOITER_SPEED_KNOTS = ls;
+             const ds = parseInt(document.getElementById('dashSpeedInput').value, 10);
+             if (!isNaN(ds) && ds > 0) DASH_SPEED_KNOTS = ds;
+             const wt = parseInt(document.getElementById('waitInput').value, 10);
+             if (!isNaN(wt) && wt >= 0) WAIT_TIME_MINUTES = wt;
+
+             aircraftMarkers.forEach(ac => {
+                 if (ac.base.animationFrameId) cancelAnimationFrame(ac.base.animationFrameId);
+                 if (ac.base.returnTimeoutId) clearTimeout(ac.base.returnTimeoutId);
+                 if (ac.base.targetMarker) ac.base.targetMarker.remove();
+                 if (ac.base.infoWindow) ac.base.infoWindow.remove();
+             });
+
+             document.getElementById('descriptionText').innerText = `Simulation running. Response Time: ${RESPONSE_TIME_MINUTES} min, Loiter Speed: ${LOITER_SPEED_KNOTS} knots.`;
+             generateInitialAircraftGrid();
+             isSimRunning = true;
+             document.getElementById('deployBtn').disabled = false;
+             document.getElementById('startSimBtn').textContent = 'Restart Sim';
+             document.getElementById('startSimBtn').classList.remove('bg-green-600', 'hover:bg-green-700');
+             document.getElementById('startSimBtn').classList.add('bg-orange-500', 'hover:bg-orange-600');
+        }
+
+        // --- Live ADS-B Data Functions ---
+        function startFetchingLiveData() {
+            document.getElementById('adsbStatus').innerText = 'Fetching...';
+            fetchLiveAircraftData();
+            liveDataInterval = setInterval(fetchLiveAircraftData, 20000);
+        }
+
+        function stopFetchingLiveData() {
+            clearInterval(liveDataInterval);
+            liveDataInterval = null;
+            document.getElementById('adsbStatus').innerText = '';
+            for (const icao24 in liveAircraftMarkers) {
+                liveAircraftMarkers[icao24].remove();
+            }
+            liveAircraftMarkers = {};
+        }
+        
+        async function fetchLiveAircraftData() {
+            const adsbStatusEl = document.getElementById('adsbStatus');
+            if (adsbStatusEl) adsbStatusEl.innerText = 'Fetching...';
+            const bounds = map.getBounds();
+            if (!bounds) return;
+
+            const ne = bounds.getNorthEast();
+            const sw = bounds.getSouthWest();
+            const apiUrl = `https://opensky-network.org/api/states/all?lamin=${sw.lat}&lomin=${sw.lng}&lamax=${ne.lat}&lomax=${ne.lng}`;
+            
+            try {
+                const response = await fetch(apiUrl);
+                if (!response.ok) {
+                    console.warn(`Failed to fetch live data: ${response.status} ${response.statusText}.`);
+                    if (adsbStatusEl) adsbStatusEl.innerText = 'Fetch failed';
+                    return;
+                }
+                const data = await response.json();
+                const aircraftList = data.states || [];
+                if (adsbStatusEl) {
+                    adsbStatusEl.innerText = `Found ${aircraftList.length} aircraft`;
+                }
+                updateLiveAircraftMarkers(aircraftList);
+            } catch (error) {
+                console.error("Error processing live aircraft data:", error);
+                if (adsbStatusEl) adsbStatusEl.innerText = 'Error';
+            }
+        }
+
+        function updateLiveAircraftMarkers(states) {
+            const visibleIcao24 = new Set();
+            states.forEach(state => {
+                const [icao24, callsign, , , , longitude, latitude, baro_altitude, on_ground, velocity, true_track] = state;
+                if (typeof latitude !== 'number' || typeof longitude !== 'number' || on_ground) return;
+                
+                visibleIcao24.add(icao24);
+                const position = L.latLng(latitude, longitude);
+
+                const altitudeFt = baro_altitude ? `${Math.round(baro_altitude * 3.28084)}ft` : '';
+                const speedKts = velocity ? `${Math.round(velocity * 1.94384)}kts` : '---';
+                const headingDeg = true_track !== null ? `${Math.round(true_track).toString().padStart(3, '0')}°` : '---';
+                const labelText = `${(callsign || icao24).trim()}\n${altitudeFt}\n${speedKts} ${headingDeg}`;
+
+                if (liveAircraftMarkers[icao24]) {
+                    const marker = liveAircraftMarkers[icao24];
+                    marker.setLatLng(position);
+                    marker.setRotationAngle(true_track);
+                    marker.setTooltipContent(labelText);
+                } else {
+                    const icon = L.divIcon({
+                        html: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#f59e0b" width="24px" height="24px"><path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/></svg>`,
+                        className: '',
+                        iconSize: [24, 24],
+                        iconAnchor: [12, 12]
+                    });
+                    const marker = L.marker(position, { icon: icon, rotationAngle: true_track }).addTo(map);
+                    marker.bindTooltip(labelText, { permanent: true, direction: 'right', offset: [10, 0], className: 'live-adsb-label' });
+                    liveAircraftMarkers[icao24] = marker;
+                }
+            });
+            for (const icao24 in liveAircraftMarkers) {
+                if (!visibleIcao24.has(icao24)) {
+                    liveAircraftMarkers[icao24].remove();
+                    delete liveAircraftMarkers[icao24];
+                }
+            }
+        }
+
+        function checkDeconfliction() {
+            if (Object.keys(liveAircraftMarkers).length === 0) return;
+            aircraftMarkers.forEach(simAc => {
+                if (!simAc.base.isDispatched) {
+                    const currentBasePos = L.latLng(simAc.base.lat, simAc.base.lng);
+                    let isConflict = false;
+                    for (const icao24 in liveAircraftMarkers) {
+                        const liveAcPos = liveAircraftMarkers[icao24].getLatLng();
+                        if (currentBasePos.distanceTo(liveAcPos) < MIN_SEPARATION_METERS) {
+                            const bearing = computeHeading(liveAcPos, currentBasePos);
+                            const newSafePosition = computeOffset(liveAcPos, MIN_SEPARATION_METERS, bearing);
+                            simAc.base.lat = newSafePosition.lat;
+                            simAc.base.lng = newSafePosition.lng;
+                            isConflict = true;
+                            break;
+                        }
+                    }
+                    if (!isConflict && (simAc.base.lat !== simAc.base.originalLat || simAc.base.lng !== simAc.base.originalLng)) {
+                        const originalPos = L.latLng(simAc.base.originalLat, simAc.base.originalLng);
+                        let isOriginalPosSafe = true;
+                        for (const icao24 in liveAircraftMarkers) {
+                             if (originalPos.distanceTo(liveAircraftMarkers[icao24].getLatLng()) < MIN_SEPARATION_METERS) {
+                                 isOriginalPosSafe = false; break;
+                             }
+                        }
+                        if (isOriginalPosSafe) {
+                            simAc.base.lat = simAc.base.originalLat;
+                            simAc.base.lng = simAc.base.originalLng;
+                        }
+                    }
+                }
+            });
+        }
+
+        function generateInitialAircraftGrid() {
+            aircraftMarkers.forEach(ac => {
+                ac.marker.remove();
+                ac.trail.remove();
+            });
+            aircraftMarkers = [];
+            deploymentCounter = 0;
+            
+            const bounds = map.getBounds();
+            if (!bounds) return;
+            
+            const loiterSpeedMps = LOITER_SPEED_KNOTS * 0.514444;
+            const maxTravelDistanceMeters = loiterSpeedMps * RESPONSE_TIME_MINUTES * 60;
+            const requiredCellSizeMeters = maxTravelDistanceMeters * Math.sqrt(2);
+            const ne = bounds.getNorthEast();
+            const sw = bounds.getSouthWest();
+            const mapWidthMeters = sw.distanceTo(L.latLng(sw.lat, ne.lng));
+            const mapHeightMeters = sw.distanceTo(L.latLng(ne.lat, sw.lng));
+            const densityX = Math.max(1, Math.ceil(mapWidthMeters / requiredCellSizeMeters));
+            const densityY = Math.max(1, Math.ceil(mapHeightMeters / requiredCellSizeMeters));
+            const latStep = (ne.lat - sw.lat) / densityY;
+            const lngStep = (ne.lng - sw.lng) / densityX;
+            const basesToShow = [];
+            for (let i = 0; i < densityY; i++) {
+                for (let j = 0; j < densityX; j++) {
+                    const lat = sw.lat + latStep * (i + 0.5);
+                    const lng = sw.lng + lngStep * (j + 0.5);
+                    basesToShow.push({
+                        lat, lng, originalLat: lat, originalLng: lng,
+                        distanceAlongPath: Math.random() * RACETRACK_PERIMETER,
+                        orientation: Math.random() * 2 * Math.PI,
+                    });
+                }
+            }
+            setupAircraft(basesToShow);
+            checkCoverage();
+        }
+
+        function checkCoverage() {
+            const statusBox = document.getElementById('statusBox');
+            if (!statusBox || !isSimRunning) {
+                 if (statusBox) statusBox.innerText = 'Not Started';
+                 return;
+            }
+
+            const orbitingAircraftBases = aircraftMarkers
+                .filter(ac => !ac.base.isDispatched)
+                .map(ac => L.latLng(ac.base.originalLat, ac.base.originalLng));
+
+            if (orbitingAircraftBases.length === 0) {
+                 statusBox.style.backgroundColor = '#ef4444';
+                 statusBox.innerText = 'No Coverage';
+                 return;
+            }
+
+            const bounds = map.getBounds();
+            if (!bounds) return;
+
+            const tempLoiterSpeed = parseInt(document.getElementById('loiterSpeedInput').value, 10) || LOITER_SPEED_KNOTS;
+            const tempResponseTime = parseInt(document.getElementById('responseTimeInput').value, 10) || RESPONSE_TIME_MINUTES;
+
+            const loiterSpeedMps = tempLoiterSpeed * 0.514444;
+            const maxTravelDistanceMeters = loiterSpeedMps * tempResponseTime * 60;
+
+            let isCovered = true;
+            const ne = bounds.getNorthEast();
+            const sw = bounds.getSouthWest();
+            
+            // Test a reduced grid of points for better performance
+            for (let i = 0; i <= 5; i++) {
+                for (let j = 0; j <= 5; j++) {
+                    const testLat = sw.lat + (ne.lat - sw.lat) * (i / 5);
+                    const testLng = sw.lng + (ne.lng - sw.lng) * (j / 5);
+                    const testPoint = L.latLng(testLat, testLng);
+                    
+                    let minDistanceToPoint = Infinity;
+                    orbitingAircraftBases.forEach(basePos => {
+                        const dist = testPoint.distanceTo(basePos);
+                        if (dist < minDistanceToPoint) minDistanceToPoint = dist;
+                    });
+
+                    if (minDistanceToPoint > maxTravelDistanceMeters) {
+                        isCovered = false; break;
+                    }
+                }
+                if (!isCovered) break;
+            }
+
+            if(isCovered) {
+                statusBox.style.backgroundColor = '#22c55e';
+                statusBox.innerText = 'Coverage OK';
+            } else {
+                statusBox.style.backgroundColor = '#ef4444';
+                const dispatchedCount = aircraftMarkers.length - orbitingAircraftBases.length;
+                if (dispatchedCount > 0) {
+                    statusBox.innerText = 'Coverage Degraded';
+                } else {
+                    statusBox.innerText = 'Coverage Gap';
+                }
+            }
+        }
+
+        function deployAircraftAtCenter() {
+            if (!isSimRunning) return;
+            const center = map.getCenter();
+            const baseData = {
+                lat: center.lat, lng: center.lng, originalLat: center.lat, originalLng: center.lng,
+                distanceAlongPath: Math.random() * RACETRACK_PERIMETER,
+                orientation: Math.random() * 2 * Math.PI,
+            };
+            setupSingleAircraft(baseData);
+        }
+
+        function setupAircraft(basesToSetup) {
+            basesToSetup.forEach(baseData => setupSingleAircraft(baseData));
+        }
+        
+        function setupSingleAircraft(baseData) {
+            const base = {
+                ...baseData,
+                available: true, isDispatched: false, isReturningToBase: false,
+                animationFrameId: null, returnTimeoutId: null, targetMarker: null,
+                infoWindow: null, deploymentId: 0
+            };
+            const icon = L.divIcon({
+                html: `<div style="width: 8px; height: 8px; background-color: #10b981; border-radius: 50%;"></div>`,
+                className: '', iconSize: [8, 8], iconAnchor: [4, 4]
+            });
+            const marker = L.marker([base.lat, base.lng], { icon }).addTo(map);
+            const trail = L.polyline([], { color: '#10b981', weight: 3, opacity: 0.8 }).addTo(map);
+            aircraftMarkers.push({ marker, base, trail });
+            checkCoverage();
+        }
+        
+        let lastOrbitAnimTime = 0;
+
+        function calculateOrbitPositionAndHeading(base) {
+             let d = base.distanceAlongPath; let x, y, heading;
+             const S = STRAIGHT_SIDE_METERS, T = TURN_LENGTH_METERS, R = TURN_RADIUS_METERS;
+             if (d < S) { x = (S / 2) - d; y = R; heading = 270; }
+             else if (d < S + T) { let a = (d - S) / T * Math.PI, cA = Math.PI / 2 - a; x = (-S / 2) - R * Math.cos(cA); y = R * Math.sin(cA); heading = 270 - (a * 180 / Math.PI); }
+             else if (d < (2 * S) + T) { x = (-S / 2) + (d - (S + T)); y = -R; heading = 90; }
+             else { let a = (d - (2 * S + T)) / T * Math.PI, cA = -Math.PI / 2 + a; x = (S / 2) + R * Math.cos(cA); y = R * Math.sin(cA); heading = (90 - (a * 180 / Math.PI) + 360) % 360; }
+             const o = base.orientation;
+             const rX = x * Math.cos(o) - y * Math.sin(o), rY = x * Math.sin(o) + y * Math.cos(o);
+             const fH = (heading + (o * 180 / Math.PI)) % 360;
+             return { x: rX, y: rY, heading: fH };
+        }
+
+        function animateOrbit(currentTime) {
+            if (lastOrbitAnimTime === 0) lastOrbitAnimTime = currentTime;
+            const deltaTime = (currentTime - lastOrbitAnimTime) / 1000;
+            lastOrbitAnimTime = currentTime;
+            const safeDeltaTime = Math.min(deltaTime, 0.5);
+            const loiterSpeedMps = LOITER_SPEED_KNOTS * 0.514444;
+            const distanceIncrement = loiterSpeedMps * safeDeltaTime;
+            aircraftMarkers.forEach(ac => {
+                if (ac.base && !ac.base.isDispatched) {
+                    ac.base.distanceAlongPath = (ac.base.distanceAlongPath + distanceIncrement) % RACETRACK_PERIMETER;
+                    const { x, y } = calculateOrbitPositionAndHeading(ac.base);
+                    const baseCenter = L.latLng(ac.base.lat, ac.base.lng);
+                    const dist = Math.sqrt(x * x + y * y);
+                    const bearing = (Math.atan2(x, y) * 180 / Math.PI + 360) % 360;
+                    const newPos = computeOffset(baseCenter, dist, bearing);
+                    ac.marker.setLatLng(newPos);
+                    ac.trail.addLatLng(newPos);
+                    if (ac.trail.getLatLngs().length > 5000) ac.trail.getLatLngs().shift();
+                }
+            });
+            requestAnimationFrame(animateOrbit);
+        }
+
+        function dispatchAircraft(targetLatLng) {
+            if (!isSimRunning) return;
+            const availableAircraft = aircraftMarkers.filter(ac => !ac.base.isDispatched);
+            if (availableAircraft.length === 0) {
+                const statusBox = document.getElementById('statusBox');
+                if (statusBox) {
+                    statusBox.innerText = 'Deploy Aircraft';
+                    statusBox.style.backgroundColor = '#f97316';
+                    setTimeout(checkCoverage, 3000);
+                }
+                return;
+            }
+
+            let nearestAircraft = null, minDistance = Infinity;
+            availableAircraft.forEach(ac => {
+                const dist = ac.marker.getLatLng().distanceTo(targetLatLng);
+                if (dist < minDistance) { minDistance = dist; nearestAircraft = ac; }
+            });
+
+            if (nearestAircraft) {
+                deploymentCounter++;
+                if (nearestAircraft.base.animationFrameId) cancelAnimationFrame(nearestAircraft.base.animationFrameId);
+                if (nearestAircraft.base.returnTimeoutId) clearTimeout(nearestAircraft.base.returnTimeoutId);
+                if (nearestAircraft.base.targetMarker) nearestAircraft.base.targetMarker.remove();
+                if (nearestAircraft.base.infoWindow) nearestAircraft.base.infoWindow.remove();
+
+                nearestAircraft.base.deploymentId = deploymentCounter;
+                
+                const xIcon = L.divIcon({
+                    html: `<div style="font-size: 20px; color: #e63946; font-weight: bold;">X</div>`,
+                    className: '', iconSize: [20, 20], iconAnchor: [10, 10],
+                    labelAnchor: [0, 0]
+                });
+
+                nearestAircraft.base.targetMarker = L.marker(targetLatLng, { icon: xIcon })
+                    .bindTooltip(`${deploymentCounter}`, {permanent: true, direction: 'top', offset: [0, -10]})
+                    .addTo(map);
+
+                nearestAircraft.base.isDispatched = true;
+                nearestAircraft.base.isReturningToBase = false;
+                
+                const redIcon = L.divIcon({ html: `<div style="width: 8px; height: 8px; background-color: #e63946; border-radius: 50%;"></div>`, className: '', iconSize: [8, 8], iconAnchor: [4, 4]});
+                nearestAircraft.marker.setIcon(redIcon);
+                nearestAircraft.trail.setStyle({ color: '#e63946' });
+                nearestAircraft.trail.setLatLngs([]);
+
+                nearestAircraft.base.infoWindow = L.tooltip({permanent: true}).setLatLng(nearestAircraft.marker.getLatLng()).setContent('Turning to Incident').addTo(map);
+                
+                const startPos = nearestAircraft.marker.getLatLng();
+                const targetHeading = computeHeading(startPos, targetLatLng);
+                const { heading: startHeading } = calculateOrbitPositionAndHeading(nearestAircraft.base);
+                
+                animateTurn(nearestAircraft, startPos, startHeading, targetHeading, () => {
+                    animateFlightPath(nearestAircraft, targetLatLng, () => {
+                        nearestAircraft.base.returnTimeoutId = setTimeout(() => {
+                            if (nearestAircraft.base.targetMarker) {
+                                nearestAircraft.base.targetMarker.remove();
+                                nearestAircraft.base.targetMarker = null;
+                            }
+                            returnToBase(nearestAircraft);
+                        }, WAIT_TIME_MINUTES * 60 * 1000);
+                    });
+                });
+                checkCoverage();
+            }
+        }
+
+        function animateFlightPath(aircraft, destination, onComplete) {
+            const dashSpeedMps = DASH_SPEED_KNOTS * 0.514444;
+            let lastTime = performance.now();
+            let lastPos = aircraft.marker.getLatLng();
+            
+            const flightStep = (currentTime) => {
+                const deltaTime = (currentTime - lastTime) / 1000;
+                lastTime = currentTime;
+                
+                const currentPos = aircraft.marker.getLatLng();
+                const distanceToTarget = currentPos.distanceTo(destination);
+                const travelDistance = dashSpeedMps * deltaTime;
+
+                if (distanceToTarget < travelDistance) {
+                    aircraft.marker.setLatLng(destination);
+                    if (aircraft.base.infoWindow) aircraft.base.infoWindow.setLatLng(destination);
+                    onComplete();
+                    return;
+                }
+
+                let headingToDestination = computeHeading(currentPos, destination);
+                let finalHeading = headingToDestination;
+
+                for (const icao24 in liveAircraftMarkers) {
+                    const liveAcPos = liveAircraftMarkers[icao24].getLatLng();
+                    const projectedPathPoint = computeOffset(currentPos, dashSpeedMps * 5, headingToDestination);
+                    if (projectedPathPoint.distanceTo(liveAcPos) < MIN_SEPARATION_METERS) {
+                        const bearingToLiveAc = computeHeading(currentPos, liveAcPos);
+                        let headingDiff = bearingToLiveAc - headingToDestination;
+                        if (headingDiff > 180) headingDiff -= 360; if (headingDiff < -180) headingDiff += 360;
+                        finalHeading = (headingDiff > 0) ? (headingToDestination - 60 + 360) % 360 : (headingToDestination + 60 + 360) % 360;
+                        break;
+                    }
+                }
+
+                const nextPos = computeOffset(currentPos, travelDistance, finalHeading);
+                aircraft.marker.setLatLng(nextPos);
+                aircraft.trail.addLatLng(nextPos);
+                
+                if (aircraft.base.infoWindow) {
+                    const currentHeading = computeHeading(lastPos, nextPos);
+                    const remainingTimeMin = (distanceToTarget / dashSpeedMps) / 60;
+                    const infoContent = `Task #${aircraft.base.deploymentId}<br>${Math.round(DASH_SPEED_KNOTS)}kts | ${Math.round(currentHeading).toString().padStart(3, '0')}°<br>ETA: ${remainingTimeMin.toFixed(1)} min`;
+                    aircraft.base.infoWindow.setContent(infoContent).setLatLng(nextPos);
+                }
+                lastPos = nextPos;
+                aircraft.base.animationFrameId = requestAnimationFrame(flightStep);
+            };
+            aircraft.base.animationFrameId = requestAnimationFrame(flightStep);
+        }
+
+        function animateTurn(aircraft, turnStartPos, startHeading, endHeading, onCompleteCallback) {
+            const dashSpeedMps = DASH_SPEED_KNOTS * 0.514444;
+            let headingDiff = (endHeading - startHeading);
+            if (headingDiff > 180) headingDiff -= 360; if (headingDiff < -180) headingDiff += 360; if (headingDiff > 0) headingDiff -= 360;
+            const turnAngleRad = Math.abs(headingDiff) * (Math.PI / 180);
+            const arcLength = ARC_TURN_RADIUS_METERS * turnAngleRad;
+            const turnDuration = (arcLength / dashSpeedMps) * 1000;
+            const startTime = performance.now();
+            const turnCenterBearing = (startHeading - 90 + 360) % 360;
+            const turnCenterPos = computeOffset(turnStartPos, ARC_TURN_RADIUS_METERS, turnCenterBearing);
+            const turn = () => {
+                const elapsed = performance.now() - startTime;
+                const fraction = Math.min(elapsed / turnDuration, 1);
+                const currentHeading = startHeading + headingDiff * fraction;
+                const bearingFromCenter = (currentHeading + 90 + 360) % 360;
+                const newPos = computeOffset(turnCenterPos, ARC_TURN_RADIUS_METERS, bearingFromCenter);
+                aircraft.marker.setLatLng(newPos);
+                aircraft.trail.addLatLng(newPos);
+                if (fraction < 1) aircraft.base.animationFrameId = requestAnimationFrame(turn); else onCompleteCallback();
+            };
+            aircraft.base.animationFrameId = requestAnimationFrame(turn);
+        }
+
+        function returnToBase(aircraft) {
+            if (aircraft.base.infoWindow) aircraft.base.infoWindow.remove();
+            aircraft.base.returnTimeoutId = null; aircraft.base.isReturningToBase = true;
+            
+            const greenIcon = L.divIcon({ html: `<div style="width: 8px; height: 8px; background-color: #10b981; border-radius: 50%;"></div>`, className: '', iconSize: [8, 8], iconAnchor: [4, 4]});
+            aircraft.marker.setIcon(greenIcon);
+
+            aircraft.trail.setStyle({ color: '#10b981' }); 
+            aircraft.trail.setLatLngs([]);
+            
+            const { x, y } = calculateOrbitPositionAndHeading({ distanceAlongPath: 0, orientation: aircraft.base.orientation });
+            const baseCenter = L.latLng(aircraft.base.originalLat, aircraft.base.originalLng);
+            const dist = Math.sqrt(x * x + y * y);
+            const bearing = (Math.atan2(x, y) * 180 / Math.PI + 360) % 360;
+            const orbitEntryPoint = computeOffset(baseCenter, dist, bearing);
+
+            animateFlightPath(aircraft, orbitEntryPoint, () => {
+                aircraft.base.isDispatched = false; 
+                aircraft.base.isReturningToBase = false;
+                aircraft.base.distanceAlongPath = 0; 
+                aircraft.trail.setLatLngs([]);
+                checkCoverage();
+            });
+        }
+        
+        // Initial call
+        document.addEventListener('DOMContentLoaded', initMap);
+
+    </script>
+
 </body>
 </html>
+
